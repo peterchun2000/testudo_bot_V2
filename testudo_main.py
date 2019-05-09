@@ -16,14 +16,13 @@ from time import sleep
 from random import randint
 from decimal import Decimal
 
+import pytz
 import datetime
-from datetime import datetime
 
 message_sent = []
 bot_id = 'bot_id'
 request_token = 'request_token'
 user_id = 'user_id'
-group_id = 'group_id'
 username = "username"
 password = "password"
 
@@ -170,8 +169,13 @@ def get_course_index(course):
 
 
 def is_Testudo_on():
-    weekno = datetime.today().weekday()
-    date_time = str(datetime.now())
+    east_tz = pytz.timezone('US/Eastern')
+
+    now = datetime.datetime.utcnow().replace(tzinfo = pytz.utc)
+
+    weekno = now.astimezone(east_tz).weekday()
+    date_time = str(now.astimezone(east_tz))
+
     space_index = date_time.find(" ")
     time = date_time[space_index:]
     # this is the current hour
@@ -210,7 +214,7 @@ def get_messages():
         request_params = {'token': request_token}
         request_params['limit'] = 1
         response_messages = requests.get(
-            f'https://api.groupme.com/v3/groups/{group_id}/messages', params=request_params).json()['response']['messages']
+            'https://api.groupme.com/v3/groups/46445199/messages', params=request_params).json()['response']['messages']
         for message in response_messages:
             if(message['user_id'] == user_id and message['text'] != last_message):
                 # list function
@@ -330,7 +334,7 @@ if __name__ == '__main__':
     options = se.webdriver.ChromeOptions()
 
     # chrome is set to headless
-    # options.add_argument('headless')
+    options.add_argument('headless')
 
     driver = se.webdriver.Chrome(chrome_options=options)
 
@@ -339,4 +343,5 @@ if __name__ == '__main__':
         if(is_Testudo_on()):
             main()
         if(is_Testudo_on() == False):
+
             stay_logged_in()
