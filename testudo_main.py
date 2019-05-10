@@ -23,13 +23,22 @@ message_sent = []
 bot_id = 'bot_id'
 request_token = 'request_token'
 user_id = 'user_id'
-group_id = "group_id"
+group_id = 'group_id'
 username = "username"
 password = "password"
 
 course_list = []
 course_num = 0
 first_course_in = False
+need_login = False
+
+options = se.webdriver.ChromeOptions()
+
+# chrome is set to headless
+options.add_argument('headless')
+
+driver = se.webdriver.Chrome(chrome_options=options)
+
 
 class Course:
     def __init__(self, course_name):
@@ -58,6 +67,9 @@ def login(username, password):
         while('https://app.testudo.umd.edu/' not in str(driver.current_url)):
             sleep(1)
     except:
+        url = "https://app.testudo.umd.edu/main/dropAdd"
+        driver.get(url)
+        sleep(1)
         return -1
 
 
@@ -121,12 +133,18 @@ def get_section_data(course):
         table_id = driver.find_element(
             By.XPATH, '//*[@id="drop_add_form"]/table/tbody/tr[6]/td/div/div[2]/table/tbody')
     except:
-        driver.refresh()
         sleep(2)
         sign_again = check_exists_by_xpath(
             '//*[@id="mainContent"]/div[2]/button')
         full_login = check_exists_by_xpath('//*[@id="username"]')
-        if(sign_again):
+        need_cancel = check_exists_by_xpath(
+            '//*[@id="drop_add_form"]/table/tbody/tr[6]/td/div/div[3]/button[2]')
+        if(need_cancel):
+            cancel = WebDriverWait(driver, 10).until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="drop_add_form"]/table/tbody/tr[6]/td/div/div[3]/button[2]')))
+            cancel.click()
+            course_list.remove(get_course_index(course))
+        elif(sign_again):
             sign_out_error()
             return -1
         elif(full_login):
@@ -172,7 +190,7 @@ def get_course_index(course):
 def is_Testudo_on():
     east_tz = pytz.timezone('US/Eastern')
 
-    now = datetime.datetime.utcnow().replace(tzinfo = pytz.utc)
+    now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
 
     weekno = now.astimezone(east_tz).weekday()
     date_time = str(now.astimezone(east_tz))
@@ -190,7 +208,7 @@ def is_Testudo_on():
     else:
         is_on_time = False
     # check for weekends
-    if weekno<5:
+    if weekno < 5:
         is_weekend = True
     else:
         is_weekend = False
@@ -205,68 +223,76 @@ def get_messages():
     global course_list
     global course_num
     global first_course_in
-    post_params = {'bot_id': bot_id,
-                   'text': "starting bot"}
-    requests.post('https://api.groupme.com/v3/bots/post', params=post_params)
+    global need_login
+    global group_id
+
+    print("starting bot")
     # if section not open, continuously check
     last_message = ""
     remove_mes = "remove"
     while True:
         request_params = {'token': request_token}
         request_params['limit'] = 1
-        response_messages = requests.get(
-            f'https://api.groupme.com/v3/groups/{group_id}/messages', params=request_params).json()['response']['messages']
-        for message in response_messages:
-            if(message['user_id'] == user_id and message['text'] != last_message):
-                # list function
-                if(message['text'].lower() == "testing"):
-                    post_params = {'bot_id': bot_id,
-                                   'text': "still working"}
-                    requests.post(
-                        'https://api.groupme.com/v3/bots/post', params=post_params)
-                    break
-                # if(remove_mes in message['text'].lower()):
+        try:
+            response_messages = requests.get(
+                f'https://api.groupme.com/v3/groups/{group_id}/messages', params=request_params).json()['response']['messages']
+        except:
+            print("response error")
+            sleep(3)
+        if(response_messages[0]['user_id'] == user_id and response_messages[0]['text'] != last_message):
+            # list function
+            did_cmmd = False
+            if(response_messages[0]['text'].lower() == "testing"):
+                print("testing")
+                post_params = {'bot_id': bot_id,
+                               'text': "still working"}
+                requests.post(
+                    'https://api.groupme.com/v3/bots/post', params=post_params)
+                last_message = "asdf"
+                did_cmmd = True
 
-                #     print(message['text'])
-                #     last_message = message['text']
-                #     sleep(1)
-                #     break
-                print(message['text'])
-                last_message = message['text']
-                index_of_space = message['text'].find(" ")
+            elif(response_messages[0]['text'].lower() == "login"):
+                print("login commdn")
+                need_login = True
+                last_message = "asdf"
+                did_cmmd = True
+
+            last_message = response_messages[0]['text']
+            got_new = False
+            try:
+                index_of_space = response_messages['text'].find(" ")
                 # accepts new course
-                new_course = message['text'][0:index_of_space]
-                new_section_num = message['text'][index_of_space +
-                                                  1: len(message['text'])]
-                got_new = False
+                new_course = response_messages[0]['text'][0:index_of_space]
+                new_section_num = response_messages[0]['text'][index_of_space +
+                                                               1: len(response_messages[0]['text'])]
                 if(get_course_index(new_course) == -1):
                     got_new = True
+                    did_cmmd == True
+            except:
+                print(last_message)
 
-                # if this is a new course
-                if (got_new == True):
-                    print("creating new course")
-                    # this is where we add a new course
-                    course_list.append(Course(new_course.lower()))
-                    course_index = get_course_index(new_course)
-                    course_list[course_index].section_list.append(
-                        new_section_num)
-                    course_num += 1
-                    first_course_in = True
-                    post_params = {'bot_id': bot_id,
-                                   'text': "added new course"}
-                    requests.post(
-                        'https://api.groupme.com/v3/bots/post', params=post_params)
-                # adds section to this list
-                if (got_new == False):
-                    print("adding section to course")
-                    course_index = get_course_index(new_course)
-                    course_list[course_index].section_list.append(
-                        new_section_num)
-                    print("added", course_list[course_index].section_list[1])
-                    post_params = {'bot_id': bot_id,
-                                   'text': "added new section"}
-                    requests.post(
-                        'https://api.groupme.com/v3/bots/post', params=post_params)
+            # if this is a new course
+            if (got_new == True and did_cmmd == False):
+                print("creating new course")
+                # this is where we add a new course
+                course_list.append(Course(new_course.lower()))
+                course_index = get_course_index(new_course)
+                course_list[course_index].section_list.append(
+                    new_section_num)
+                course_num += 1
+                first_course_in = True
+
+                print("added new course")
+                did_cmmd = True
+            # adds section to this list
+            elif (got_new == False and did_cmmd == False):
+                course_index = get_course_index(new_course)
+                course_list[course_index].section_list.append(
+                    new_section_num)
+                print("added new section")
+                did_cmmd = True
+
+        did_cmmd = False
 
 
 def stay_logged_in():
@@ -306,7 +332,27 @@ def check_exists_by_xpath(xpath):
             (By.XPATH, xpath)))
     except TimeoutException:
         return False
+    except:
+        return False
     return True
+
+
+def redo_login():
+    global need_login
+    url = "https://app.testudo.umd.edu/main/dropAdd"
+    driver.get(url)
+    sleep(1)
+
+    login(username, password)
+    sleep(1)
+    get_term("Fall 2019")
+    sleep(1)
+    sign_out_error()
+    post_params = {'bot_id': bot_id,
+                   'text': "done login"}
+    requests.post(
+        'https://api.groupme.com/v3/bots/post', params=post_params)
+    need_login = False
 
 
 def main():
@@ -315,8 +361,6 @@ def main():
         url = "https://app.testudo.umd.edu/main/dropAdd"
         driver.get(url)
         sleep(1)
-        # print(driver.current_url)
-        # new_url = driver.current_url
 
         # starts group me thread
 
@@ -327,6 +371,8 @@ def main():
         sign_out_error()
     if (first_course_in == True):
         while(is_Testudo_on()):
+            if(need_login):
+                redo_login()
             for course in course_list:
                 submit_course_by_name(course.course_name)
                 sleep(1)
@@ -334,21 +380,31 @@ def main():
 
 
 if __name__ == '__main__':
-    options = se.webdriver.ChromeOptions()
-
-    # chrome is set to headless
-    options.add_argument('headless')
-
-    driver = se.webdriver.Chrome(chrome_options=options)
 
     # starts message thread
     t = Thread(target=get_messages)
     t.start()
 
+    # adding courses
+    course_list.append(Course("cmsc216"))
+    course_list[0].section_list.append("0104")
+    course_list.append(Course("chem231"))
+    course_list[1].section_list.append("5421")
+    course_list[1].section_list.append("5422")
+    course_list[1].section_list.append("5423")
+    course_list[1].section_list.append("5441")
+    course_list[1].section_list.append("5442")
+    course_list[1].section_list.append("5443")
+
+    first_course_in = True
+
+    print(course_list[1].course_name)
+    print(course_list[1].section_list[1])
     print(is_Testudo_on())
+    # .....................................
+
     while(True):
         if(is_Testudo_on()):
             main()
         if(is_Testudo_on() == False):
-
             stay_logged_in()
